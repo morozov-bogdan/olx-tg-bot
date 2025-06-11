@@ -5,12 +5,12 @@ from webdriver_manager.chrome import ChromeDriverManager
 from bs4 import BeautifulSoup
 
 
-
-
 OLX_URL = 'https://www.olx.ua/d/uk/list/q-{query}/'  # Шаблон URL для поиска на OLX
 
 
 def get_olx_ads(query):
+    """ Получение get запроса с сайта olx по поисковым запросам """
+
     options = webdriver.ChromeOptions()
     options.add_argument("--headless")  # Фоновый режим
     options.add_argument("--disable-blink-features=AutomationControlled")

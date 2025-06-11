@@ -12,14 +12,17 @@ from aiogram.client.default import DefaultBotProperties
 from aiogram.enums import ParseMode
 from aiogram.filters import CommandStart, Command
 from aiogram.types import Message, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+from datetime import datetime, timedelta
 
 
 dp = Dispatcher()
+last_search_time = {}
 
 
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
-    await message.answer(f"Приветствую {message.from_user.first_name}", reply_markup=keyboard.kb_start)
+    await message.answer(f"Приветствую {message.from_user.first_name}")
+    # await message.answer(f"Приветствую {message.from_user.first_name}", reply_markup=keyboard.kb_start)
 
 
 @dp.message(Command('stop'))
@@ -40,15 +43,25 @@ async def check_seller(message: Message):
 # @dp.message(F.text.lower() == 'поиск товара')
 @dp.message(Command('search'))
 async def search_article(message: Message):
+    
     query = message.text.replace('/search', '').strip()
     if not query:
         await message.answer("Пожалуйста, укажите поисковый запрос после команды /search")
         return
     
-    await message.answer(f"🔍 Ищу объявления по запросу: {query}...")
 
     try:
+        current_datetime = datetime.now()
+
+        if message.from_user.id in last_search_time: # добавление кд для поиска вещи в 30 секунд
+            last_time = last_search_time[message.from_user.id]
+            if current_datetime - last_time < timedelta(seconds=30):
+                await message.answer("Пожалуйста подождите 30 секунд перед новым запросом.")
+                return
+
+        await message.answer(f"🔍 Ищу объявления по запросу: {query}...")
         ads = foa.get_olx_ads(query)
+
 
         for i in range(len(ads['title'])):
             await message.answer(f'{i+1}. <b>{ads['title'][i]}</b>\n💵 {ads['price'][i]}\n📍 {ads['location_date'][i]}\n🔗 https://www.olx.ua{ads['link'][i]}', 
@@ -58,9 +71,12 @@ async def search_article(message: Message):
             )
             if i+1 == 20:
                 break
+        
+        last_search_time[message.from_user.id] = current_datetime
 
     except Exception as e:
         await message.answer(f"Произошла ошибка: {str(e)}")
+    
 
 
 @dp.message(F.text.lower() == 'мой профиль')
