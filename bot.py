@@ -2,18 +2,21 @@ import asyncio
 import logging
 import sys
 import keyboard
-import fetch_olx_ads as foa
+import fetch_olx_ads as fetch_oa
 import arenda_olx_ads as arenda_oa
 
 
-from bs4 import BeautifulSoup
 from config import TOKEN
-from aiogram import Bot, Dispatcher, html, types, F
-from aiogram.client.default import DefaultBotProperties
-from aiogram.enums import ParseMode
-from aiogram.filters import CommandStart, Command
-from aiogram.types import Message, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton
+
+from bs4 import BeautifulSoup
 from datetime import datetime, timedelta
+
+from aiogram import Bot, Dispatcher, html, types, F, exceptions
+from aiogram.enums import ParseMode
+from aiogram.types import Message, ReplyKeyboardMarkup, ReplyKeyboardRemove, KeyboardButton, InlineKeyboardButton, InlineKeyboardMarkup, CallbackQuery
+from aiogram.filters import CommandStart, Command
+from aiogram.client.default import DefaultBotProperties
+from aiogram.utils.keyboard import InlineKeyboardBuilder
 
 
 dp = Dispatcher()
@@ -24,45 +27,25 @@ last_search_time_arenda = {}
 @dp.message(CommandStart())
 async def command_start_handler(message: Message) -> None:
     await message.answer(f"Приветствую {message.from_user.first_name}")
-    # await message.answer(f"Приветствую {message.from_user.first_name}", reply_markup=keyboard.kb_start)
+    
 
-
-@dp.message(Command('stop'))
-async def stop_bot(message: Message):
-    await message.answer('Бот был остановлен', reply_markup=ReplyKeyboardRemove())
-
-
-@dp.message(F.text.lower() == 'информация про товар')
-async def info_for_article(message: Message):
-    pass
-
-
-@dp.message(F.text.lower() == 'проверка продавца')
-async def check_seller(message: Message):
-    pass
-
-
-# @dp.message(F.text.lower() == 'поиск товара')
 @dp.message(Command('search'))
 async def search_article(message: Message):
-    
     query = message.text.replace('/search', '').strip()
     if not query:
         await message.answer("Пожалуйста, укажите поисковый запрос после команды /search")
         return
-    
 
     current_datetime = datetime.now()
-
     if message.from_user.id in last_search_time_article: # добавление кд для поиска вещи в 30 секунд
             last_time = last_search_time_article[message.from_user.id]
             if current_datetime - last_time < timedelta(seconds=30):
                 await message.answer("Пожалуйста подождите 30 секунд перед новым запросом.")
                 return
 
-    await message.answer(f"🔍 Ищу объявления по запросу: {query}...")
-    ads = foa.get_olx_ads(query)
 
+    await message.answer(f"🔍 Ищу объявления по запросу: {query}... \n⏳ Среднее время поиска ~20 секунд")
+    ads = fetch_oa.get_olx_ads(query, offset=0, limit=20)
 
     for i in range(len(ads['title'])):
         await message.answer(f'{i+1}. <b>{ads['title'][i]}</b>\n💵 {ads['price'][i]}\n📍 {ads['location_date'][i]}\n🔗 https://www.olx.ua{ads['link'][i]}', 
@@ -71,18 +54,63 @@ async def search_article(message: Message):
                                 disable_notification=True
         )
         if i+1 >= 20:
-            break
+            kb_show_more_article = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="Да",
+                        callback_data=f"show_more_article:{query}:20"  # query и offset=20
+                    )]
+                ]
+            )
+            await message.answer("Загрузить ещё?", reply_markup=kb_show_more_article)
     
     last_search_time_article[message.from_user.id] = current_datetime
     
+@dp.callback_query(F.data.startswith("show_more_article:"))
+async def show_more_article(call: CallbackQuery):
+    _, query, offset = call.data.split(':')
+    offset = int(offset)
 
+    ads = fetch_oa.get_olx_ads(query, offset=offset, limit=20)
+
+    if not ads['title']:
+        await(f'К сожалению, не смог найти больше объявлений')
+        return
+    
+    await call.message.answer(f"🔍 Продолжаю поиск объявлений по запросу: {query}... \n⏳ Среднее время поиска ~20 секунд")
+    for i in range(len(ads['title'])):
+        await call.message.answer(f'{i+1}. <b>{ads['title'][i]}</b>\n💵 {ads['price'][i]}\n📍 {ads['location_date'][i]}\n🔗 https://www.olx.ua{ads['link'][i]}', 
+                                parse_mode='HTML',
+                                disable_web_page_preview=True,
+                                disable_notification=True
+        )
+
+
+    new_offset = offset + 20
+    kb_show_more_article = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Да",
+                callback_data=f"show_more_article:{query}:{new_offset}"
+            )]
+        ]
+    ) 
+
+    await call.message.answer("Загрузить ещё?", reply_markup=kb_show_more_article)
+    try:
+        await call.answer()
+    except exceptions.TelegramBadRequest as e:
+        if 'query is too old' in e:
+            pass
+        else:
+            raise e
 
 @dp.message(Command('arenda'))
 async def search_arenda(message: Message):
     args = message.text.split(maxsplit=3)[1:]
 
     if len(args) <= 0: 
-        await message.reply('<b>Пожалуйста введите команду: <i>/arenda "город" "валюта"* "cортировка"*</i>\nОбозначение "*", являеться необязательным параметром при запросе</b>', parse_mode='HTML')
+        await message.reply('<b>❔ Пожалуйста введите команду: <i>/arenda "город" "валюта"* "cортировка"*</i>\n❗ Обозначение "*", являеться необязательным параметром при запросе</b>', parse_mode='HTML')
         return
 
     arg1 = args[0]
@@ -130,16 +158,6 @@ async def search_arenda(message: Message):
             break
     
     last_search_time_arenda[message.from_user.id] = current_datetime
-
-
-@dp.message(F.text.lower() == 'мой профиль')
-async def my_profile(message: Message):
-    pass
-
-
-@dp.message(F.text.lower() == 'тех.подержка')
-async def create_tiket(message: Message):
-    pass
 
 
 async def main() -> None:

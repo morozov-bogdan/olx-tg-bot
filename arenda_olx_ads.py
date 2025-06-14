@@ -39,9 +39,9 @@ def get_olx_arenda(city, sort, currency):
     if sort == '3' or sort == 'рекомендованные': sort = 'relevance:desc'
     if sort == None: sort = 'relevance:desc'
 
+    if currency == None: currency = 'USD'
     if currency.upper() == 'USD' or currency.upper() == 'ЮСД': currency = 'USD'
     if currency.upper() == 'UAH' or currency.upper() == 'ЮАН': currency = 'UAH'
-    if currency == None: currency = 'USD'
 
     valid_city = False
     for c in city_list:

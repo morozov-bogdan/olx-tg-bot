@@ -1,4 +1,5 @@
 from aiogram import types
+from aiogram.types import InlineKeyboardButton
 
 
 keyboard_start = [
@@ -9,4 +10,4 @@ keyboard_start = [
     [types.KeyboardButton(text='Тех.подержка')]
 ]
 
-kb_start = types.ReplyKeyboardMarkup(keyboard=keyboard_start, resize_keyboard=True)
+start = types.ReplyKeyboardMarkup(keyboard=keyboard_start, resize_keyboard=True)
