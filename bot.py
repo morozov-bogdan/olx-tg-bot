@@ -130,13 +130,12 @@ async def search_arenda(message: Message):
     check_sort_keys = ['1', '2', '3']
     check_valid_currency = ['USD', 'UAH', 'ЮСД', 'ЮАН'] 
 
-    if arg2 != None and arg2.lower() not in check_sort_keys:
-        await message.reply("При выборе сортировке впишите цифру варианта:\n1. От дешёвых к дорогим\n2. От дорогих к дешёвым\n3. Рекомендованные")
-        return
-    if arg3 != None and arg3.upper() not in check_valid_currency:
+    if arg2 != None and arg2.upper() not in check_valid_currency:
         await message.reply("Доступны такие виды валют:\n'USD', 'UAH'")
         return
-
+    if arg3 != None and arg3.lower() not in check_sort_keys:
+        await message.reply("При выборе сортировке впишите цифру варианта:\n1. От дешёвых к дорогим\n2. От дорогих к дешёвым\n3. Рекомендованные")
+        return
 
     current_datetime = datetime.now()
     if message.from_user.id in last_search_time_arenda:
@@ -147,17 +146,78 @@ async def search_arenda(message: Message):
             await message.answer("Пожалуйста подождите 60 секунд перед новым запросом.")
             return
 
-
-    ads = arenda_oa.get_olx_arenda(city=arg1, sort=arg2, currency=arg3)
+    await message.answer('🔍 Начал поиск аренды...\n⏳ Среднее время ответа на запрос ~20 секунд')
+    
+    ads = arenda_oa.get_olx_arenda(city=arg1, currency=arg2, sort=arg3, offset=0, limit=20)
 
     for i in range((len(ads['title']))):
         await message.answer(f'<b>{ads['title'][i]}</b>\n💵 <b>{ads['price'][i]}</b>\n📍 {ads['location_date'][i]}\n<a href="https://www.olx.ua{ads['link'][i]}">Ссылка</a>',
                              parse_mode='HTML',
                              disable_notification=True)
         if i+1 >= 20:
-            break
-    
+            callback = f'show_more_arenda:{arg1}:20'
+            if arg2 != None: callback = callback+f':{arg2}'
+            if arg3 != None: callback = callback+f':{arg3}'
+
+            kb_show_more_article = InlineKeyboardMarkup(
+                inline_keyboard=[
+                    [InlineKeyboardButton(
+                        text="Да",
+                        callback_data=callback
+                    )]
+                ]
+            )
+            await message.answer("Загрузить ещё?", reply_markup=kb_show_more_article)
+           
+
     last_search_time_arenda[message.from_user.id] = current_datetime
+
+
+@dp.callback_query(F.data.startswith("show_more_arenda:"))
+async def show_more_arenda(call: CallbackQuery):
+    callback_query = call.data.split(':')
+    
+    city = callback_query[1]
+    offset = int(callback_query[2])
+    
+    currency = callback_query[3] if len(callback_query) > 3 else None
+    sort = callback_query[4] if len(callback_query) > 4 else None
+
+    ads = arenda_oa.get_olx_arenda(city=city, offset=offset, currency=currency, sort=sort, limit=20)
+    if not ads['title']:
+        await call.message.answer('К сожалению более не нашёл объявлений')
+        return
+    
+
+    for i in range((len(ads['title']))):
+        await call.message.answer(f'<b>{ads['title'][i]}</b>\n💵 <b>{ads['price'][i]}</b>\n📍 {ads['location_date'][i]}\n<a href="https://www.olx.ua{ads['link'][i]}">Ссылка</a>',
+                             parse_mode='HTML',
+                             disable_notification=True)
+        
+    new_offset = offset + 20
+    callback = f'show_more_arenda:{city}:{new_offset}'
+    if currency != None: callback = callback+f':{currency}'
+    if sort != None: callback = callback+f':{sort}'
+
+    kb_show_more_arenda = InlineKeyboardMarkup(
+        inline_keyboard=[
+            [InlineKeyboardButton(
+                text="Да",
+                callback_data=callback
+            )]
+        ]
+    )
+
+    await call.message.answer("Загрузить ещё?", reply_markup=kb_show_more_arenda)
+    try:
+        await call.answer()
+    except exceptions.TelegramBadRequest as e:
+        if 'query is too old' in e:
+            pass
+        else:
+            raise e
+
+
 
 
 async def main() -> None:
